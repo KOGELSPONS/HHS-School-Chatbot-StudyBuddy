@@ -3,11 +3,6 @@ from llama_cpp import Llama
 
 MODEL_PATH = "./models/Llama-3.2-3B-Instruct-Q6_K_L.gguf"
 
-# filename: local_llm_stream.py
-from llama_cpp import Llama
-
-MODEL_PATH = "./models/Llama-3.2-3B-Instruct-Q6_K_L.gguf"
-
 # Initialize model
 llm = Llama(
     model_path=MODEL_PATH,
