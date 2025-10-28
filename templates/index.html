@@ -1,0 +1,105 @@
+<html>
+  <body style="font-family:sans-serif;max-width:820px;margin:40px auto;">
+    <h2>TinyLlama Chat</h2>
+
+    <div style="margin:8px 0; display:flex; gap:8px; align-items:center;">
+      <button onclick="newChat()">New chat</button>
+      <button onclick="resetChat()">Reset</button>
+      <button onclick="exportChat()">Export</button>
+      <span id="sid" style="opacity:0.7"></span>
+    </div>
+
+    <div id="chat" style="border:1px solid #ddd; padding:12px; min-height:300px; white-space:pre-wrap;"></div>
+
+    <div style="display:flex; gap:8px; margin-top:8px;">
+      <input id="prompt" style="flex:1; padding:8px" placeholder="Type your message..."/>
+      <button onclick="startStream()">Send</button>
+      <button onclick="stopStream()">Stop</button>
+    </div>
+
+    <script>
+      const STREAM_PATH = '{{ stream_path }}';
+      let es = null;
+
+      function ensureSession() {
+        let id = localStorage.getItem('session_id');
+        if (!id) {
+          id = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+          localStorage.setItem('session_id', id);
+        }
+        document.getElementById('sid').textContent = "session: " + id;
+        return id;
+      }
+
+      async function refreshHistory() {
+        const sid = ensureSession();
+        const res = await fetch('/history?session_id=' + sid);
+        const data = await res.json();
+        const chat = document.getElementById('chat');
+        chat.textContent = "";
+        for (const m of data.messages) {
+          if (m.role === 'system') continue;
+          chat.textContent += (m.role.toUpperCase() + ": " + m.content + "\n\n");
+        }
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      function append(role, text) {
+        const chat = document.getElementById('chat');
+        chat.textContent += (role.toUpperCase() + ": " + text);
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      function appendToken(tok) {
+        const chat = document.getElementById('chat');
+        chat.textContent += tok;
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      async function startStream() {
+        const sid = ensureSession();
+        if (es) es.close();
+        const p = encodeURIComponent(document.getElementById('prompt').value);
+        if (!p) return;
+        document.getElementById('prompt').value = "";
+        append('user', decodeURIComponent(p) + "\n\n");
+        append('assistant', "");
+        es = new EventSource(`${STREAM_PATH}?session_id=${sid}&prompt=` + p);
+
+        es.onmessage = (e) => {
+          try {
+            const obj = JSON.parse(e.data);
+            if (obj.token) appendToken(obj.token);
+            if (obj.error) appendToken("\n[error: " + obj.error + "]\n");
+          } catch (_) {
+            appendToken(e.data);
+          }
+        };
+        es.addEventListener('done', () => { es && es.close(); refreshHistory(); });
+        es.onerror = () => { es && es.close(); };
+      }
+
+      function stopStream() { if (es) es.close(); es = null; }
+
+      function newChat() {
+        localStorage.removeItem('session_id');
+        ensureSession();
+        refreshHistory();
+      }
+
+      async function resetChat() {
+        const sid = ensureSession();
+        await fetch('/reset?session_id=' + sid, { method: 'POST' });
+        refreshHistory();
+      }
+
+      function exportChat() {
+        const sid = ensureSession();
+        window.location = '/export?session_id=' + sid;
+      }
+
+      ensureSession();
+      refreshHistory();
+    </script>
+  </body>
+</html>

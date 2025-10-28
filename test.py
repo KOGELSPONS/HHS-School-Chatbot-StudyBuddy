@@ -12,7 +12,6 @@ llm = Llama(
 
 # Simple prompt with streaming
 print("Response:\n")
-output_text = ""
 for chunk in llm(
     "Explain TF-IDF in 3 short bullet points.\n",
     max_tokens=150,
