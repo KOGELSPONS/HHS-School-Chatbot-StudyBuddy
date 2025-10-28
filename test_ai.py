@@ -24,8 +24,10 @@ conf.get_default().auth_token = "34RT26Lqxaa1azQj9tuezgdRPyz_72syymZdPnwFoAXcmuP
 app = FastAPI()
 
 # ---------- TinyLlama model (small & fast) ----------
-MODEL_URL  = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q6_K_L.gguf" # Test model
-MODEL_PATH = "models\Llama-3.2-3B-Instruct-Q6_K_L.gguf"
+# MODEL_URL  = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q6_K_L.gguf" # Test model (cpu)
+# MODEL_PATH = "models\Llama-3.2-3B-Instruct-Q6_K_L.gguf"
+MODEL_URL  = "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf" # Test model (cpu for testing / gpu when deployed)
+MODEL_PATH = "models\Meta-Llama-3.1-8B-Instruct-Q8_0.gguf"
 
 if not os.path.exists(MODEL_PATH):
     import urllib.request
@@ -34,14 +36,25 @@ if not os.path.exists(MODEL_PATH):
     print("✅ Downloaded.")
 
 LLAMA_KW = dict(
-    # model="Llama-3.2-3B-Instruct-Q6_K_L.gguf",  # wherever you load this
-    n_ctx=8192,                # safe default for GGUF quant; raise only if your build/quant supports it
-    n_threads=os.cpu_count(),  # OK to keep; can cap to physical cores if you see contention
-    n_batch=1024,               # throughput; 256–1024 works well for 3B on modern CPUs
-    n_gpu_layers=0,            # CPU-only
-    f16_kv=True,               # faster KV cache
-    use_mmap=True,             # quick-load when available
-    use_mlock=True,           # True only if you have RAM to pin (reduces paging)
+    # Context
+    n_ctx=16384,             # 16384 for 3.1 8B because of ram limit, 8192 for 3.2 3b quicker testing and larger size not needed
+    rope_scaling_type=None,  # leave off unless going >8k
+
+    # Parallelism
+    n_threads=max(1, (os.cpu_count() or 4) - 2),  # Max threads -2 leaving threads for other calculations
+
+    # Batching / throughput
+    n_batch=512,             # prompt throughput; 512–768 is a sweet spot on 8B CPU, and also fine for 3B
+
+    # Offload
+    n_gpu_layers=0,          # CPU-only
+
+    # Memory knobs
+    f16_kv=True,             # halves KV cache memory, tiny quality cost
+    use_mmap=True,           # faster load, less RSS spike
+    use_mlock=True,          # you have 32 GB—pin to avoid paging (set False if you get EPERM)
+
+    # Logging
     verbose=False,
 )
 
@@ -66,7 +79,37 @@ STREAM_PATH = "/tinyllama/stream"
 # ---------- Conversation store (per-session) ----------
 CONV_DIR = Path("./conversations")
 CONV_DIR.mkdir(exist_ok=True)
-SYSTEM_PROMPT = "You are a helpful assistant."
+SYSTEM_PROMPT = """
+You are StudyBot, a friendly and knowledgeable study advisor for
+The Hague University of Applied Sciences (THUAS).
+
+Your job is to help prospective students find suitable study programs
+based on their interests, preferences, and constraints.
+
+Guidelines:
+1. Always base your answers ONLY on the data provided in the "Relevant programs" context.
+   - If information is not in the data, say you don’t know.
+   - Never invent or guess program names, details, or URLs.
+2. Keep the conversation concise and clear. Use bullet points for program suggestions.
+3. Show empathy and engagement — respond naturally, not like a database.
+4. When there are too many possible programs, ask short follow-up questions to narrow options.
+   Examples:
+     - "Are you looking for a Bachelor or a Master program?"
+     - "Do you prefer full-time or part-time studies?"
+     - "Which field interests you most — ICT, Business, or Design?"
+5. When the search is specific enough, list the top 3–5 matching programs.
+   For each program, include:
+     • Program name and degree level  
+     • Field/sector  
+     • Short one-line description  
+     • Program ID or link if available
+6. If the user changes their mind (e.g. "Actually, I want a Master instead"), update filters and
+   refine the search in the next turn.
+7. Always reply in English with a helpful and positive tone.
+
+Remember: you are an official representative of THUAS information.
+Be accurate, polite, and encouraging.
+"""
 
 # In-memory: { session_id: [ {role, content}, ... ] }
 CONV_STORE: dict[str, list[dict]] = {}
@@ -102,7 +145,7 @@ def get_messages(session_id: str) -> list[dict]:
         CONV_STORE[session_id] = msgs
     return msgs
 
-def prune_messages_for_context(messages, max_chars=None, ctx_tokens=8192, chars_per_tok=4.0, reserve_frac=0.2):
+def prune_messages_for_context(messages, max_chars=None, ctx_tokens=16384, chars_per_tok=4.0, reserve_frac=0.2):
     # keep ~80% of context for prompt; leave 20% for the model’s reply & system
     if max_chars is None:
         max_prompt_toks = int(ctx_tokens * (1 - reserve_frac))
@@ -123,7 +166,7 @@ def prune_messages_for_context(messages, max_chars=None, ctx_tokens=8192, chars_
 # Clear any previous routes and (re)register
 app.router.routes.clear()
 
-templates = Jinja2Templates(directory="/templates")
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 # ---- HTML page: simple multi-turn chat with per-session memory ----
 @app.get("/", response_class=HTMLResponse)
