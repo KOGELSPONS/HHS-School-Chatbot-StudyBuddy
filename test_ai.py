@@ -15,10 +15,18 @@ import subprocess, signal, gc
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from dotenv import load_dotenv
 
 # ---------- ngrok auth token ----------
 # Get one at: https://dashboard.ngrok.com/get-started/your-authtoken
-conf.get_default().auth_token = "34RT26Lqxaa1azQj9tuezgdRPyz_72syymZdPnwFoAXcmuPqA"
+# Load environment variables from .env
+load_dotenv()
+
+# Get the token safely
+auth_token = os.getenv("AUTH_TOKEN")
+
+# Use it in your config
+conf.get_default().auth_token = auth_token
 
 # ---------- FastAPI app ----------
 app = FastAPI()

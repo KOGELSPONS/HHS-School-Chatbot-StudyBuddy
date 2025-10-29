@@ -1,2 +1,18 @@
-models/Llama-3.2-3B-Instruct-Q6_K_L.gguf
-models/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf
+# --------------------------
+# Python virtual environment
+.venv/
+
+# Environment variables
+.env
+
+# Ignore model and conversation data
+models/
+conversations/
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+
+# IDE and system files
+.vscode/
+.DS_Store
