@@ -6,7 +6,7 @@
 .env
 
 # Ignore model and conversation data
-models/
+models/*
 conversations/
 
 # Python cache and compiled files

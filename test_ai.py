@@ -11,14 +11,12 @@ from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from pyngrok import ngrok, conf
 import uvicorn
-import subprocess, signal, gc
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
+import commentjson
 
 # ---------- ngrok auth token ----------
-# Get one at: https://dashboard.ngrok.com/get-started/your-authtoken
 # Load environment variables from .env
 load_dotenv()
 
@@ -31,49 +29,61 @@ conf.get_default().auth_token = auth_token
 # ---------- FastAPI app ----------
 app = FastAPI()
 
-# ---------- TinyLlama model (small & fast) ----------
-# MODEL_URL  = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q6_K_L.gguf" # Test model (cpu)
-# MODEL_PATH = "models\Llama-3.2-3B-Instruct-Q6_K_L.gguf"
-MODEL_URL  = "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf" # Test model (cpu for testing / gpu when deployed)
-MODEL_PATH = "models\Meta-Llama-3.1-8B-Instruct-Q8_0.gguf"
+# ---------- Loading .json and setting and loading the model ----------
+CONFIG_FILE = "config.json"  # path to your JSON
 
+def load_config(path: str = CONFIG_FILE) -> dict:
+    """Load config.json (supports // and /* */ comments)."""
+    with open(path, "r", encoding="utf-8") as f:
+        return commentjson.load(f)
+
+def select_default_model(cfg: dict) -> dict:
+    """Return the model dict referenced by default_model."""
+    models = {m["key"]: m for m in cfg.get("models", [])}
+    key = cfg.get("default_model")
+    if not key or key not in models:
+        raise RuntimeError(f"default_model '{key}' not found in config.json")
+    return models[key]
+
+def prune_none(d: dict) -> dict:
+    """Remove keys with value None so llama_cpp uses its defaults."""
+    return {k: v for k, v in d.items() if v is not None}
+
+# ---------- Setting the model ----------
+cfg = load_config()
+model_cfg = select_default_model(cfg)
+
+MODEL_URL  = model_cfg["url"]
+MODEL_PATH = model_cfg["path"]
+LLAMA_KW   = prune_none(model_cfg.get("llama_kw", {}))
+
+# Auto thread fallback if not set
+if "n_threads" not in LLAMA_KW:
+    LLAMA_KW["n_threads"] = max(1, (os.cpu_count() or 4) - 2)
+
+# Ensure model directory exists
+Path(os.path.dirname(MODEL_PATH)).mkdir(parents=True, exist_ok=True)
+
+# Download if missing
 if not os.path.exists(MODEL_PATH):
     import urllib.request
-    print("⏳ Downloading model...")
+    print(f"⏳ Downloading model:\n{MODEL_URL}\n-> {MODEL_PATH}")
     urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
     print("✅ Downloaded.")
 
-LLAMA_KW = dict(
-    # Context
-    n_ctx=16384,             # 16384 for 3.1 8B because of ram limit, 8192 for 3.2 3b quicker testing and larger size not needed
-    rope_scaling_type=None,  # leave off unless going >8k
-
-    # Parallelism
-    n_threads=max(1, (os.cpu_count() or 4) - 2),  # Max threads -2 leaving threads for other calculations
-
-    # Batching / throughput
-    n_batch=512,             # prompt throughput; 512–768 is a sweet spot on 8B CPU, and also fine for 3B
-
-    # Offload
-    n_gpu_layers=0,          # CPU-only
-
-    # Memory knobs
-    f16_kv=True,             # halves KV cache memory, tiny quality cost
-    use_mmap=True,           # faster load, less RSS spike
-    use_mlock=True,          # you have 32 GB—pin to avoid paging (set False if you get EPERM)
-
-    # Logging
-    verbose=False,
-)
-
+# ---------- Initialize Llama ----------
 _llm = None
 def _get_llm():
+    """Lazy-load the Llama model."""
     global _llm
     if _llm is None:
         from llama_cpp import Llama
         assert os.path.exists(MODEL_PATH), f"Model not found at {MODEL_PATH}"
         _llm = Llama(model_path=MODEL_PATH, **LLAMA_KW)
     return _llm
+
+# Optional confirmation print
+print(f"🔧 Using model '{model_cfg['key']}'")
 
 # ---------- Server lifecycle globals ----------
 SERVER_THREAD = None
@@ -254,44 +264,34 @@ SERVER_THREAD = None
 UVICORN_SERVER = None
 PUBLIC_TUNNEL = None
 
+# ---------- Main entry point ----------
 if __name__ == "__main__":
+    # Allow nested event loops (needed if already running async / notebooks)
     nest_asyncio.apply()
 
     # Optional: ensure ngrok is authed up-front (if needed)
     # ngrok.set_auth_token(os.environ["NGROK_TOKEN"])
 
-    # 2) Close old tunnels (useful in notebooks / reused processes)
+    # 1) Close old tunnels (useful in notebooks / reused processes)
     try:
         ngrok.kill()
     except Exception:
         pass
 
-    # 3) Start fresh tunnel
+    # 2) Start a fresh public tunnel for this run
     PUBLIC_TUNNEL = ngrok.connect(PORT, "http")  # or ngrok.connect(addr=PORT, proto="http")
     print("🔗 To chat with the model open the URL below")
     print("🔗 Public URL:", PUBLIC_TUNNEL.public_url)
 
-    # 4) Launch Uvicorn in a background thread
-    config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
-    UVICORN_SERVER = uvicorn.Server(config)
-
-    def run_server():
-        UVICORN_SERVER.run()
-
-    SERVER_THREAD = threading.Thread(target=run_server, daemon=True)
-    SERVER_THREAD.start()
-
     try:
-        SERVER_THREAD.join()
+        # 3) Run the Uvicorn server in the MAIN thread so Ctrl+C works correctly
+        config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
+        uvicorn.Server(config).run()
     except KeyboardInterrupt:
-        pass
+        # 4) Graceful shutdown on Ctrl+C
+        print("\n🛑 Server interrupted by user, shutting down...")
     finally:
-        # graceful shutdown if the process stays alive
-        try:
-            if UVICORN_SERVER is not None:
-                UVICORN_SERVER.should_exit = True
-        except Exception:
-            pass
+        # 5) Always clean up ngrok tunnels on exit
         try:
             ngrok.kill()
         except Exception:
