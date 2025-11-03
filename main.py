@@ -16,18 +16,11 @@ from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 import commentjson
 from pathlib import Path
-
 from retriever import CorpusIndex, load_corpus_from_schema, format_hits_as_context
+from config import AUTH_TOKEN
 
-# ---------- ngrok auth token ----------
-# Load environment variables from .env
-load_dotenv()
-
-# Get the token safely
-auth_token = os.getenv("AUTH_TOKEN")
-
-# Use it in your config
-conf.get_default().auth_token = auth_token
+# Use it directly
+conf.get_default().auth_token = AUTH_TOKEN
 
 # ---------- FastAPI app ----------
 app = FastAPI()
@@ -318,7 +311,7 @@ async def tinyllama_stream(prompt: str = Query(...), session_id: str = Query(...
                     messages=prune_messages_for_context(run_messages),
                     stream=True,
                     temperature=0.4,     # lower temp for grounded answers
-                    max_tokens=512,
+                    max_tokens=1024,
                 )
                 chunks = []
                 for chunk in stream:
@@ -392,34 +385,6 @@ if __name__ == "__main__":
     PUBLIC_TUNNEL = ngrok.connect(PORT, "http")  # or ngrok.connect(addr=PORT, proto="http")
     print("🔗 To chat with the model open the URL below")
     print("🔗 Public URL:", PUBLIC_TUNNEL.public_url)
-
-    # ✅ Append (or update) BACKEND_BASE in the existing .env file
-    env_path = ".env"
-    lines = []
-    found = False
-
-    # Read current .env (if exists)
-    try:
-        with open(env_path, "r") as f:
-            lines = f.readlines()
-    except FileNotFoundError:
-        pass
-
-    # Update or append BACKEND_BASE
-    for i, line in enumerate(lines):
-        if line.startswith("BACKEND_BASE="):
-            lines[i] = f"BACKEND_BASE={PUBLIC_TUNNEL.public_url}\n"
-            found = True
-            break
-
-    if not found:
-        lines.append(f"BACKEND_BASE={PUBLIC_TUNNEL.public_url}\n")
-
-    # Write back to .env
-    with open(env_path, "w") as f:
-        f.writelines(lines)
-
-    print("✅ Updated .env with BACKEND_BASE =", PUBLIC_TUNNEL.public_url)
 
     try:
         # 3) Run the Uvicorn server in the MAIN thread so Ctrl+C works correctly

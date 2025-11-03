@@ -2,9 +2,6 @@
 # Python virtual environment
 .venv/
 
-# Environment variables
-.env
-
 # Ignore model and conversation data
 models/*
 conversations/
@@ -16,3 +13,4 @@ __pycache__/
 # IDE and system files
 .vscode/
 .DS_Store
+
