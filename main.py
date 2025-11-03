@@ -149,6 +149,15 @@ Be accurate, polite, and conversational.
 Engage the user naturally, but stay fully grounded in the provided data.
 """
 
+GREETING = (
+    "Hello there! 👋 I’m **StudyBot**, your friendly study advisor at The Hague University of Applied Sciences.\n\n"
+    "What’s your name? 😊\n"
+    "I’d love to help you find a study program that fits you best.\n\n"
+    "Are you looking for a **Bachelor**, **Master**, or something else?\n"
+    "And do you already have a field in mind, like **Business**, **ICT**, or **Design**?"
+)
+
+
 # In-memory: { session_id: [ {role, content}, ... ] }
 CONV_STORE: dict[str, list[dict]] = {}
 
@@ -182,6 +191,37 @@ def get_messages(session_id: str) -> list[dict]:
         msgs = load_conv(session_id)
         CONV_STORE[session_id] = msgs
     return msgs
+
+def ensure_bootstrap(session_id: str) -> list[dict]:
+    """
+    Ensure the session has a system message and, if there are no user/assistant
+    turns yet, append a one-time greeting. Persist any changes and return history.
+    Safe to call multiple times; it won't duplicate the greeting.
+    """
+    history = get_messages(session_id) or []
+    changed = False
+
+    # Ensure system exists (your load_conv() already does this, but keep as guard)
+    if not any(m.get("role") == "system" for m in history):
+        history.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
+        changed = True
+
+    # Detect existing conversation and avoid double-greeting
+    has_turn = any(m.get("role") in ("user", "assistant") for m in history)
+    has_greeting = any(
+        m.get("role") == "assistant" and m.get("content") == GREETING
+        for m in history
+    )
+
+    # If brand new (system-only), add greeting
+    if not has_turn and not has_greeting:
+        history.append({"role": "assistant", "content": GREETING})
+        changed = True
+
+    if changed:
+        save_conv(session_id, history)
+
+    return history
 
 def prune_messages_for_context(messages, max_chars=None, ctx_tokens=16384, chars_per_tok=4.0, reserve_frac=0.2):
     # keep ~80% of context for prompt; leave 20% for the model’s reply & system
@@ -287,6 +327,8 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 # ---- HTML page: simple multi-turn chat with per-session memory ----
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    # preload model once when the page is opened
+    _ = _get_llm()
     return templates.TemplateResponse(
         "index.html",
         {"request": request, "stream_path": STREAM_PATH}
@@ -300,7 +342,8 @@ async def tinyllama_stream(prompt: str = Query(...), session_id: str = Query(...
         lock = _get_lock(session_id)
 
         async with lock:
-            history = get_messages(session_id)
+            # Make sure system + greeting exist even if stream is first
+            history = ensure_bootstrap(session_id)
 
             # >>> NEW: Build retrieval-augmented messages
             run_messages = build_messages_with_context(history, prompt)
@@ -342,13 +385,16 @@ async def tinyllama_stream(prompt: str = Query(...), session_id: str = Query(...
 # ---- Helpers: view/reset/export conversation ----
 @app.get("/history", response_class=JSONResponse)
 def get_history(session_id: str = Query(...)):
-    return {"session_id": session_id, "messages": get_messages(session_id)}
+    history = ensure_bootstrap(session_id)
+    return {"session_id": session_id, "messages": history}
 
 @app.post("/reset", response_class=JSONResponse)
 def reset_history(session_id: str = Query(...)):
-    CONV_STORE[session_id] = [{"role":"system","content": SYSTEM_PROMPT}]
+    # Clear to an empty list; ensure_bootstrap will add system + greeting
+    CONV_STORE[session_id] = []
     save_conv(session_id, CONV_STORE[session_id])
-    return {"ok": True}
+    history = ensure_bootstrap(session_id)
+    return {"ok": True, "messages": history}
 
 @app.get("/export", response_class=HTMLResponse)
 def export_history(session_id: str = Query(...)):

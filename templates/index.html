@@ -1,25 +1,108 @@
 <html>
-  <body style="font-family:sans-serif;max-width:820px;margin:40px auto;">
+  <head>
+    <meta charset="utf-8">
+    <title>TinyLlama Chat</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+      body {
+        font-family: sans-serif;
+        max-width: 820px;
+        margin: 40px auto;
+        background: #fafafa;
+        color: #222;
+      }
+
+      h2 {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+
+      br {
+        line-height: 0.5;
+      }
+
+      #chat {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 16px;
+        min-height: 320px;
+        background: #fff;
+        overflow-y: auto;
+        line-height: 1.5;
+      }
+
+      #chat b {
+        color: #333;
+      }
+
+      #chat p {
+        margin: 0.4em 0;
+      }
+
+      #chat code {
+        background: #f3f3f3;
+        padding: 2px 4px;
+        border-radius: 4px;
+      }
+
+      input#prompt {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+
+      button {
+        padding: 6px 12px;
+        border: none;
+        background: #4a90e2;
+        color: white;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #357ab8;
+      }
+
+      .toolbar {
+        margin: 8px 0;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      #sid {
+        opacity: 0.7;
+        font-size: 0.9em;
+      }
+    </style>
+  </head>
+
+  <body>
     <h2>TinyLlama Chat</h2>
 
-    <div style="margin:8px 0; display:flex; gap:8px; align-items:center;">
+    <div class="toolbar">
       <button onclick="newChat()">New chat</button>
       <button onclick="resetChat()">Reset</button>
       <button onclick="exportChat()">Export</button>
-      <span id="sid" style="opacity:0.7"></span>
+      <span id="sid"></span>
     </div>
 
-    <div id="chat" style="border:1px solid #ddd; padding:12px; min-height:300px; white-space:pre-wrap;"></div>
+    <div id="chat"></div>
 
     <div style="display:flex; gap:8px; margin-top:8px;">
-      <input id="prompt" style="flex:1; padding:8px" placeholder="Type your message..."/>
+      <input id="prompt" placeholder="Type your message..."/>
       <button onclick="startStream()">Send</button>
       <button onclick="stopStream()">Stop</button>
     </div>
-
     <script>
       const STREAM_PATH = '{{ stream_path }}';
       let es = null;
+
+      // Track the currently streaming assistant message so we can re-render Markdown as tokens arrive
+      let currentAssistantEl = null;
+      let currentAssistantRaw = "";
 
       function ensureSession() {
         let id = localStorage.getItem('session_id');
@@ -36,23 +119,66 @@
         const res = await fetch('/history?session_id=' + sid);
         const data = await res.json();
         const chat = document.getElementById('chat');
-        chat.textContent = "";
+        chat.innerHTML = ""; // we'll render as HTML w/ Markdown
+
         for (const m of data.messages) {
           if (m.role === 'system') continue;
-          chat.textContent += (m.role.toUpperCase() + ": " + m.content + "\n\n");
+
+          // Wrapper per message
+          const wrapper = document.createElement('div');
+          const label = document.createElement('b');
+          label.textContent = m.role.toUpperCase() + ": ";
+          const content = document.createElement('span');
+
+          // Render content as Markdown (bold, italics, etc.)
+          content.innerHTML = marked.parse(m.content || "");
+
+          wrapper.appendChild(label);
+          wrapper.appendChild(content);
+          chat.appendChild(wrapper);
+          chat.appendChild(document.createElement('br'));
         }
         chat.scrollTop = chat.scrollHeight;
+
+        // Reset streaming state after a full refresh
+        currentAssistantEl = null;
+        currentAssistantRaw = "";
       }
 
       function append(role, text) {
         const chat = document.getElementById('chat');
-        chat.textContent += (role.toUpperCase() + ": " + text);
+
+        const wrapper = document.createElement('div');
+        const label = document.createElement('b');
+        label.textContent = role.toUpperCase() + ": ";
+        const content = document.createElement('span');
+
+        if (role === 'assistant') {
+          // Start a streaming assistant message; render Markdown (even if empty)
+          currentAssistantRaw = text || "";
+          content.innerHTML = marked.parse(currentAssistantRaw);
+          currentAssistantEl = content;
+        } else {
+          // Render user text as Markdown too (harmless; enables bold if user uses it)
+          content.innerHTML = marked.parse(text || "");
+        }
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(content);
+        chat.appendChild(wrapper);
+        chat.appendChild(document.createElement('br'));
         chat.scrollTop = chat.scrollHeight;
       }
 
       function appendToken(tok) {
         const chat = document.getElementById('chat');
-        chat.textContent += tok;
+        // If for some reason there isn't an active assistant container, start one
+        if (!currentAssistantEl) {
+          append('assistant', "");
+        }
+        currentAssistantRaw += tok || "";
+        // Re-render incrementally as Markdown
+        currentAssistantEl.innerHTML = marked.parse(currentAssistantRaw);
         chat.scrollTop = chat.scrollHeight;
       }
 
@@ -62,8 +188,13 @@
         const p = encodeURIComponent(document.getElementById('prompt').value);
         if (!p) return;
         document.getElementById('prompt').value = "";
+
+        // Render user message (Markdown-enabled)
         append('user', decodeURIComponent(p) + "\n\n");
+
+        // Start an empty assistant message we will stream into
         append('assistant', "");
+
         es = new EventSource(`${STREAM_PATH}?session_id=${sid}&prompt=` + p);
 
         es.onmessage = (e) => {
@@ -84,13 +215,13 @@
       function newChat() {
         localStorage.removeItem('session_id');
         ensureSession();
-        refreshHistory();
+        setTimeout(refreshHistory, 300);
       }
 
       async function resetChat() {
         const sid = ensureSession();
         await fetch('/reset?session_id=' + sid, { method: 'POST' });
-        refreshHistory();
+        setTimeout(refreshHistory, 300);
       }
 
       function exportChat() {

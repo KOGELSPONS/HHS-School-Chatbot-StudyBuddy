@@ -18,9 +18,10 @@ Download the file **`Finished_prototype.ipynb`** from Google Drive:
 - Copy your **Auth Token**.
 
 ### 4. Run the Notebook
-- Run each code cell **in order** from top to bottom.
-- When prompted for your token:
-  - Paste your ngrok **Auth Token** into the box.
+- Run each code cell **in order**, from top to bottom.  
+- If Colab asks to **restart the runtime/server**, click **“Yes”** (or **“Restart”**) and then continue running the next cell.  
+- When prompted for your token:  
+  - Paste your ngrok **Auth Token** into the box.  
   - Press **Enter**.
 
 ### 5. Start the App
