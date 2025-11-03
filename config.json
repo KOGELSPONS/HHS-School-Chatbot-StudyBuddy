@@ -17,7 +17,7 @@
         "n_threads": 2,         // CPU threads
         "n_gpu_layers": 999,       // 0 = CPU, >0 = GPU offload
         "use_mmap": true,        // faster loading
-        "use_mlock": false,       // lock in RAM (set false if permission error)
+        "use_mlock": true,       // lock in RAM (set false if permission error)
         "f16_kv": true,          // reduce KV memory, small perf cost
         "verbose": false,        // enable llama.cpp debug logs
 
