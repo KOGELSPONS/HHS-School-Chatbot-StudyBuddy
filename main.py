@@ -139,7 +139,6 @@ StudyBot Recommendation:
   • Conformity: <short 1–3 line explanation of why this program fits the user's interests or criteria>
   • URL: <url>
   • Program ID: <program_id>
-  • Source: [<program_id>]
 
 If there are multiple programs, repeat the bullet section for each.
 
@@ -295,6 +294,8 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 # ---- HTML page: simple multi-turn chat with per-session memory ----
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    # preload model once when the page is opened
+    _ = _get_llm()
     return templates.TemplateResponse(
         "index.html",
         {"request": request, "stream_path": STREAM_PATH}
