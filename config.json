@@ -1,7 +1,6 @@
 {
   // Which model to auto-load
   "default_model": "llama_3.1_8b_8q",
-
   "models": [
     {
       "key": "llama_3.1_8b_8q",
@@ -12,8 +11,8 @@
         // ----------------------------
         // 🔧 Useful to Change
         // ----------------------------
-        "n_ctx": 16384,          // context window
-        "n_batch": 512,          // batch throughput
+        "n_ctx": 24576,          // context window
+        "n_batch": 2048,          // batch throughput
         "n_threads": 2,         // CPU threads
         "n_gpu_layers": 999,       // 0 = CPU, >0 = GPU offload
         "use_mmap": true,        // faster loading
@@ -31,7 +30,7 @@
         "vocab_only": null,
         "kv_overrides": null,
         "seed": null,
-        "n_ubatch": 64,
+        "n_ubatch": 128,
         "n_threads_batch": 2,
         "pooling_type": null,
         "rope_freq_base": null,

@@ -12,6 +12,10 @@
         color: #222;
       }
 
+      #chat .msg p { white-space: pre-wrap; }
+
+      #chat .msg p { white-space: pre-wrap; } 
+
       h2 {
         text-align: center;
         margin-bottom: 20px;
@@ -128,7 +132,8 @@
           const wrapper = document.createElement('div');
           const label = document.createElement('b');
           label.textContent = m.role.toUpperCase() + ": ";
-          const content = document.createElement('span');
+          const content = document.createElement('div');
+          content.className = 'msg';
 
           // Render content as Markdown (bold, italics, etc.)
           content.innerHTML = marked.parse(m.content || "");
@@ -151,7 +156,9 @@
         const wrapper = document.createElement('div');
         const label = document.createElement('b');
         label.textContent = role.toUpperCase() + ": ";
-        const content = document.createElement('span');
+        const content = document.createElement('div');
+        content.className = 'msg';
+
 
         if (role === 'assistant') {
           // Start a streaming assistant message; render Markdown (even if empty)

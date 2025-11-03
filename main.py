@@ -52,6 +52,7 @@ model_cfg = select_default_model(cfg)
 MODEL_URL  = model_cfg["url"]
 MODEL_PATH = model_cfg["path"]
 LLAMA_KW   = prune_none(model_cfg.get("llama_kw", {}))
+MODEL_NCTX = LLAMA_KW.get("n_ctx")
 
 # Auto thread fallback if not set
 if "n_threads" not in LLAMA_KW:
@@ -107,18 +108,24 @@ based on their interests, preferences, and questions.
    - If information is not in the data, say you don’t know.
    - Never invent or guess program names, descriptions, details, or URLs.
    - Copy all factual fields (program name, URL, level, variant) exactly as shown.
-2. Keep your responses concise, natural, and conversational — respond like a real advisor, not a database.
-3. Use clear bullet points or short paragraphs to organize information.
-4. When a user’s question is too broad or general, ask friendly follow-up questions to clarify their preferences before giving results. Examples:
+2. Always try to **filter first** before going into deep program details.
+   - Prioritize clarifying key filters such as:
+     • Study level: Bachelor, Master, or Associate Degree  
+     • Study variant: Full-time, Part-time, or Dual  
+   - If the user doesn’t know these yet, let them continue naturally and explore interests further.
+   - Once enough filters are known, narrow down results accordingly.
+3. Keep your responses concise, natural, and conversational — respond like a real advisor, not a database.
+4. Use clear bullet points or short paragraphs to organize information.
+5. When a user’s question is too broad or general, ask friendly follow-up questions to clarify their preferences before giving results. Examples:
    - "Are you looking for a Bachelor or a Master program?"
    - "Do you prefer full-time or part-time studies?"
    - "Which field interests you most: ICT, Business, or Design?"
    - "Would you like me to focus on programs with strong career prospects or student satisfaction?"
-5. When the search is specific enough, present up to the top 3 matching programs using the structured format below.
-6. Maintain a natural conversation with the user. Acknowledge their answers and guide them smoothly toward relevant programs.
-7. If the user changes their mind (e.g., “Actually, I want a Master instead”), update filters and refine the next search.
-8. Always reply in English with a helpful and positive tone.
-9. When unsure or when information is missing, say so politely and ask for clarification.
+6. When the search is specific enough, present up to the top 3 matching programs using the structured format below.
+7. Maintain a natural conversation with the user. Acknowledge their answers and guide them smoothly toward relevant programs.
+8. If the user changes their mind (e.g., “Actually, I want a Master instead”), update filters and refine the next search.
+9. Always reply in English with a helpful and positive tone.
+10. When unsure or when information is missing, say so politely and ask for clarification.
 
 ---
 
@@ -147,14 +154,18 @@ clarifying questions before suggesting any programs.
 You are an official representative of THUAS.
 Be accurate, polite, and conversational.
 Engage the user naturally, but stay fully grounded in the provided data.
+Always prioritize filtering (level and variant) before giving detailed program information.
 """
+
 
 GREETING = (
     "Hello there! 👋 I’m **StudyBot**, your friendly study advisor at The Hague University of Applied Sciences.\n\n"
-    "What’s your name? 😊\n"
-    "I’d love to help you find a study program that fits you best.\n\n"
-    "Are you looking for a **Bachelor**, **Master**, or something else?\n"
-    "And do you already have a field in mind, like **Business**, **ICT**, or **Design**?"
+    "I’m here to help you find a study program or field that fits you perfectly.\n\n"
+    "Before we dive in, could you tell me what you’re looking for?\n"
+    "👉 Are you interested in a **Bachelor’s**, a **Master’s**, or an **Associate Degree**?\n"
+    "And do you prefer **full-time**, **part-time**, or **dual** studies?\n\n"
+    "If you’re not sure yet, no worries! 😊 Just tell me a bit about what you enjoy or what kind of future you imagine, "
+    "we’ll explore your options together and find what suits you best."
 )
 
 
@@ -223,7 +234,7 @@ def ensure_bootstrap(session_id: str) -> list[dict]:
 
     return history
 
-def prune_messages_for_context(messages, max_chars=None, ctx_tokens=16384, chars_per_tok=4.0, reserve_frac=0.2):
+def prune_messages_for_context(messages, max_chars=None, ctx_tokens=MODEL_NCTX, chars_per_tok=4.0, reserve_frac=0.2):
     # keep ~80% of context for prompt; leave 20% for the model’s reply & system
     if max_chars is None:
         max_prompt_toks = int(ctx_tokens * (1 - reserve_frac))

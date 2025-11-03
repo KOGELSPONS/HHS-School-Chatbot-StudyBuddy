@@ -155,22 +155,134 @@ def load_corpus_from_schema(schema_path: str | Path) -> List[Doc]:
     return docs
 
 # ---------- Context builder ----------
-def format_hits_as_context(hits: List[Hit], max_chars: int = 2500) -> str:
-    """Create the context snippet to stuff into the prompt, citing program_id."""
-    lines = []
+def format_hits_as_context(
+    hits: List[Hit],
+    max_chars: int = 4000,
+    include_scores: bool = True,
+    show_all_metadata: bool = False,
+) -> str:
+    """
+    Build a richer context block for the LLM.
+    - Adds key stats (female %, opinion score, student count, career prospects).
+    - Optionally includes retrieval scores (vec/kw/combo) for transparency/debugging.
+    - Can include *all* metadata (except the ones already shown) if show_all_metadata=True.
+    - Still truncates to max_chars for safety.
+    """
+
+    def _fmt_num(x):
+        # Nice, compact number formatting
+        if x is None:
+            return "N/A"
+        try:
+            xv = float(x)
+        except Exception:
+            return str(x)
+        # choose precision based on magnitude
+        if abs(xv) >= 1000:
+            return f"{xv:,.0f}"
+        if abs(xv) >= 100:
+            return f"{xv:.0f}"
+        if abs(xv) >= 10:
+            return f"{xv:.1f}"
+        return f"{xv:.2f}"
+
+    def _append_stats(lines, m: Dict):
+        opinion = m.get("overall_opinion_score")
+        female_pct = m.get("first_year_female_pct")
+        students = m.get("student_count")
+        has_career = m.get("has_career_prospects")
+
+        stats = []
+        if opinion is not None:
+            stats.append(f"Overall opinion score: {_fmt_num(opinion)}")
+        if female_pct is not None:
+            stats.append(f"First-year female %: {_fmt_num(female_pct)}")
+        if students is not None:
+            # try to cast to int if it looks integral
+            try:
+                si = int(float(students))
+                stats.append(f"Student count: {si}")
+            except Exception:
+                stats.append(f"Student count: {_fmt_num(students)}")
+        if has_career is True:
+            stats.append("Career prospects: available")
+        elif has_career is False:
+            stats.append("Career prospects: not available")
+
+        if stats:
+            lines.append("Stats: " + " | ".join(stats))
+
+    def _append_all_metadata(lines, m: Dict):
+        # Show everything except the fields already rendered above
+        exclude = {
+            "program_id",
+            "program_name",
+            "program_name_en",
+            "program_type",
+            "program_variant",
+            "cluster",
+            "url",
+            "overall_opinion_score",
+            "first_year_female_pct",
+            "student_count",
+            "has_career_prospects",
+        }
+        extras = []
+        for k, v in m.items():
+            if k in exclude:
+                continue
+            # Render numbers nicely; otherwise str()
+            try:
+                vv = _fmt_num(v) if isinstance(v, (int, float, str)) else str(v)
+            except Exception:
+                vv = str(v)
+            extras.append(f"{k}: {vv}")
+        if extras:
+            lines.append("Metadata:")
+            for row in extras:
+                lines.append(f"  - {row}")
+
+    lines: List[str] = []
     for h in hits:
-        m = h.doc.metadata
-        program_id = m.get("program_id") or h.doc.id  # fallback to id if missing
+        m = h.doc.metadata or {}
+        program_id = m.get("program_id") or h.doc.id
+
+        # Header
+        lines.append("-----")
+        lines.append(f"Source Program ID: {program_id}")
         lines.append(
-            "-----\n"
-            f"Source Program ID: {program_id}\n"
-            f"Program: {m.get('program_name')} / {m.get('program_name_en')}\n"
-            f"Type: {m.get('program_type')} | Variant: {m.get('program_variant')} | Cluster: {m.get('cluster')}\n"
-            f"URL: {m.get('url')}\n"
-            f"TEXT:\n{h.doc.text[:1200].strip()}\n"
+            "Program: "
+            f"{m.get('program_name')} / {m.get('program_name_en')}"
         )
-    ctx = "\n".join(lines)
+        lines.append(
+            "Type: "
+            f"{m.get('program_type')} | Variant: {m.get('program_variant')} | Cluster: {m.get('cluster')}"
+        )
+        lines.append(f"URL: {m.get('url')}")
+
+        # Key stats
+        _append_stats(lines, m)
+
+        # Optional retrieval scores (useful for debugging or tie-break logic inside the prompt)
+        if include_scores:
+            s_vec = h.scores.get("vec", 0.0)
+            s_kw = h.scores.get("kw", 0.0)
+            lines.append(f"Retriever scores — combo: {_fmt_num(h.score)}, vec: {_fmt_num(s_vec)}, kw: {_fmt_num(s_kw)}")
+
+        # Optional: dump remaining metadata for richer grounding
+        if show_all_metadata:
+            _append_all_metadata(lines, m)
+
+        # Text snippet
+        snippet = (h.doc.text or "").strip()
+        # Give the model a generous snippet but let overall max_chars handle safety
+        lines.append("TEXT:")
+        lines.append(snippet[:1800])  # per-doc cap to avoid one long doc eating the whole budget
+        lines.append("")  # blank line between hits
+
+    ctx = "\n".join(lines).strip()
     if len(ctx) > max_chars:
-        ctx = ctx[:max_chars] + "\n…"
+        ctx = ctx[:max_chars].rstrip() + "\n…"
     return ctx
+
 
