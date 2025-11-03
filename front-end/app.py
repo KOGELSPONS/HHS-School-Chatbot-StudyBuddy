@@ -3,10 +3,12 @@ import uuid
 import requests
 import os
 import json
+from dotenv import load_dotenv
 
+load_dotenv()
 
-BACKEND_BASE = os.getenv("BACKEND_BASE", "https://zealously-unirritative-yamileth.ngrok-free.dev")
-STREAM_PATH = os.getenv("STREAM_PATH", "/tinyllama/stream")
+BACKEND_BASE = os.getenv("BACKEND_BASE", "http://localhost:5000")
+STREAM_PATH = os.getenv("STREAM_PATH", "/studybot/stream")
 
 st.set_page_config(page_title="StudyBot Chat", page_icon="💬", layout="centered")
 GREETING = "Hi, I'm your study chatbot. Ask me anything related to choosing your major."

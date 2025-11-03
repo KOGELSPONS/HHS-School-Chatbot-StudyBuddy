@@ -393,6 +393,34 @@ if __name__ == "__main__":
     print("🔗 To chat with the model open the URL below")
     print("🔗 Public URL:", PUBLIC_TUNNEL.public_url)
 
+    # ✅ Append (or update) BACKEND_BASE in the existing .env file
+    env_path = ".env"
+    lines = []
+    found = False
+
+    # Read current .env (if exists)
+    try:
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        pass
+
+    # Update or append BACKEND_BASE
+    for i, line in enumerate(lines):
+        if line.startswith("BACKEND_BASE="):
+            lines[i] = f"BACKEND_BASE={PUBLIC_TUNNEL.public_url}\n"
+            found = True
+            break
+
+    if not found:
+        lines.append(f"BACKEND_BASE={PUBLIC_TUNNEL.public_url}\n")
+
+    # Write back to .env
+    with open(env_path, "w") as f:
+        f.writelines(lines)
+
+    print("✅ Updated .env with BACKEND_BASE =", PUBLIC_TUNNEL.public_url)
+
     try:
         # 3) Run the Uvicorn server in the MAIN thread so Ctrl+C works correctly
         config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
