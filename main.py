@@ -317,7 +317,7 @@ async def tinyllama_stream(prompt: str = Query(...), session_id: str = Query(...
                 stream = llm.create_chat_completion(
                     messages=prune_messages_for_context(run_messages),
                     stream=True,
-                    temperature=0.2,     # lower temp for grounded answers
+                    temperature=0.4,     # lower temp for grounded answers
                     max_tokens=512,
                 )
                 chunks = []
