@@ -132,7 +132,6 @@ StudyBot Recommendation:
   • Conformity: <short 1–3 line explanation of why this program fits the user's interests or criteria>
   • URL: <url>
   • Program ID: <program_id>
-  • Source: [<program_id>]
 
 If there are multiple programs, repeat the bullet section for each.
 

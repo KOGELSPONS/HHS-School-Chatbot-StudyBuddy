@@ -5,7 +5,8 @@
 Follow these steps to run the prototype:
 
 ### 1. Download the Notebook
-Download the file **`Finished_prototype.ipynb`** to your computer.
+Download the file **`Finished_prototype.ipynb`** from Google Drive:  
+👉 [Click here to download](https://drive.google.com/file/d/1wTOxlWIbVn-MWvx4moAxODnkzuM-FP4k/view?usp=sharing)
 
 ### 2. Open in Google Colab
 - Go to [Google Colab](https://colab.research.google.com/).
