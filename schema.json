@@ -1,0 +1,37 @@
+{
+  "primary_key": "unique_id",
+  "required": [
+    "unique_id",
+    "program_id",
+    "program_name",
+    "program_name_en",
+    "program_type",
+    "program_variant",
+    "cluster",
+    "url",
+    "description"
+  ],
+  "optional": [
+    "career_prospects",
+    "overall_opinion_score",
+    "first_year_female_pct",
+    "student_count"
+  ],
+  "description_fields": [
+    "description",
+    "career_prospects"
+  ],
+  "deterministic_fields": [
+    "program_name",
+    "program_name_en",
+    "program_type",
+    "program_variant",
+    "cluster",
+    "url"
+  ],
+  "files": {
+    "parquet": null,
+    "csv": "data/data.csv",
+    "jsonl_chunks": "data/studies_chunks.jsonl"
+  }
+}

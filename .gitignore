@@ -16,3 +16,5 @@ __pycache__/
 # IDE and system files
 .vscode/
 .DS_Store
+
+scraped/
